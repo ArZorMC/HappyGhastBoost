@@ -21,3 +21,15 @@ permissions:
   happyghastboost.use:
     description: Allows the player to use Happy Ghast boost features
     default: false
+
+    # 🎚️ Preset Permissions (examples only — optional to define)
+    # These are just sample entries to help permission tools (like LuckPerms) recognize them.
+    # You can add as many custom presets as you want in config.yml (e.g. "legendary", "trial", etc.).
+    # Format: happyghastboost.preset.<preset-name>
+    happyghastboost.preset.vip:
+      description: Applies the 'vip' boost preset from config.yml
+      default: false
+
+    happyghastboost.preset.ultra:
+      description: Applies the 'ultra' boost preset from config.yml
+      default: false

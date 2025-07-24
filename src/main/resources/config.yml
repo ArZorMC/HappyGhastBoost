@@ -113,6 +113,48 @@ particle-trail:
                                  # These will fail silently or cause errors if used here.
                                  # 📚 See full list: https://hub.spigotmc.org/javadocs/bukkit/org/bukkit/Particle.html
 
+# === 🎚️ Boost Presets ===
+# Define alternate boost behavior for players with specific permissions.
+#
+# Each entry below defines a named preset (e.g., "vip", "ultra").
+# To assign a player to a preset, give them the permission:
+#     happyghastboost.preset.<preset-name>
+#
+# For example:
+# - happyghastboost.preset.vip     → applies the "vip" preset below
+# - happyghastboost.preset.ultra   → applies the "ultra" preset below
+#
+# Presets can override:
+# - boost-speed   → multiplier for boost velocity (e.g., 1.0 = default speed)
+#                  ⚠️ Too high (e.g. > 1.5) may cause rubberbanding or client desync.
+# - refill-rate   → how fast boost recharges
+# - drain-rate    → how fast boost drains while active
+# - particle      → optional particle type while boosting
+#
+# ➕ To use the global default particle-trail.type in a preset, set:
+#    particle: ""   ← (must be an empty string)
+#
+# ⚠️ OP WARNING:
+#   Operators (OPs) automatically have ALL permissions, including all presets.
+#   This means OPs may unintentionally receive preset boost settings.
+#   To test default behavior, use /deop or a permissions plugin to control access.
+#
+# If a player has multiple matching permissions, the first match found is used.
+# To avoid unpredictable behavior, give each player only ONE matching happyghastboost.preset.<name> permission.
+# If no matching permission is found, the main config values are used.
+presets:
+  vip:
+    boost-speed: 1.1
+    refill-rate: 0.03
+    drain-rate: 0.0025
+    particle: END_ROD
+
+  ultra:
+    boost-speed: 1.3
+    refill-rate: 0.05
+    drain-rate: 0.0018
+    particle: SOUL_FIRE_FLAME
+
 # === 🔍 Console Logging Settings ===
 
 # Controls how much information is logged to the console.

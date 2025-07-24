@@ -9,6 +9,8 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 
 import org.bukkit.*;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HappyGhast;
 import org.bukkit.entity.Player;
@@ -35,7 +37,7 @@ public class HappyGhastBoostManager implements Listener {
     // ======================
     private final HappyGhastBoost plugin;
 
-    // ⛽ Boost & Charge State
+    // ⛽ Boost & Charge State //
 
     // 📛 Key used to store/retrieve boost charge from PersistentDataContainer
     private final NamespacedKey CHARGE_KEY;
@@ -46,7 +48,7 @@ public class HappyGhastBoostManager implements Listener {
     // 💾 Stores the charge level of a ghast after a player dismounts, so it can be restored on remount
     private final Map<UUID, Double> ghastChargeLevels = new HashMap<>();
 
-    // 🎮 Player & Entity Mapping
+    // 🎮 Player & Entity Mapping //
 
     // 🗺 Maps each ghast's UUID to the UUID of the player currently piloting it
     private final Map<UUID, UUID> ghastToPilot = new HashMap<>();
@@ -57,7 +59,7 @@ public class HappyGhastBoostManager implements Listener {
     // 🧹 Temporary suppression of boost logic right after dismount to avoid ghost ticks
     private final Set<UUID> recentlyUnregistered = new HashSet<>();
 
-    // 🧪 Logging Snapshot Filters
+    // 🧪 Logging Snapshot Filters //
 
     // 🧭 Throttle timestamps for per-key spam suppression
     private final Map<String, Long> logTimestamps = new HashMap<>();
@@ -71,7 +73,11 @@ public class HappyGhastBoostManager implements Listener {
     // 🧠 Used to suppress duplicate verbose logs about dot/speed/alignment
     private final Map<UUID, String> lastDotSpeedSnapshot = new HashMap<>();
 
-    // ⏱️ Task Scheduling
+    // 🎚️ Preset System //
+    private final Map<String, BoostPreset> presetMap = new HashMap<>();
+    private BoostPreset defaultPreset;
+
+    // ⏱️ Task Scheduling //
 
     // 🔁 Main Bukkit task that ticks all active ghast pilots
     private BukkitTask loopTask;
@@ -79,8 +85,6 @@ public class HappyGhastBoostManager implements Listener {
     // ======================
     // ⚙️ Configurable Values (loaded from config.yml)
     // ======================
-    private double drainRate;
-    private double refillRate;
     private double boostSpeed;
     private int updateInterval;
     private boolean trailEnabled;
@@ -103,22 +107,77 @@ public class HappyGhastBoostManager implements Listener {
         log(LoggingMode.DEBUG, "Config", "Settings reloaded from config.yml and messages.yml.");
     }
 
-    private void loadSettings() {
-        // 🧪 Pull boost behavior config from config.yml
-        drainRate = plugin.getConfig().getDouble("drain-rate", 0.02);
-        refillRate = plugin.getConfig().getDouble("refill-rate", 0.005);
-        boostSpeed = plugin.getConfig().getDouble("boost-speed", 0.7);
-        updateInterval = plugin.getConfig().getInt("update-interval", 2);
-        trailEnabled = plugin.getConfig().getBoolean("particle-trail.enabled", true);
+    public void loadSettings() {
+        plugin.saveDefaultConfig(); // Ensure defaults exist
+        FileConfiguration config = plugin.getConfig();
 
-        String raw = plugin.getConfig().getString("particle-trail.type", "FLAME");
+        // ⚙️ Load main boost config values
+        boostSpeed = config.getDouble("boost-speed", 1.0);
+        updateInterval = config.getInt("update-interval", 2);
+        trailEnabled = config.getBoolean("particle-trail.enabled", true);
+
+        // ✨ Parse global particle type
+        String trailName = config.getString("particle-trail.type", "FLAME").toUpperCase(Locale.ROOT);
         try {
-            trailType = Particle.valueOf(raw.toUpperCase(Locale.ROOT));
+            trailType = Particle.valueOf(trailName);
         } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("Invalid global particle-trail.type: " + trailName + ". Defaulting to FLAME.");
             trailType = Particle.FLAME;
-            plugin.getLogger().warning("Invalid particle type in config: " + raw + ". Defaulting to FLAME.");
-            log(LoggingMode.DEBUG, "Config", "Particle fallback: using FLAME");
         }
+
+        // 🌊 Default refill/drain rates (used if no preset matches)
+        double refillRate = config.getDouble("refill-rate", 0.02);
+        double drainRate = config.getDouble("drain-rate", 0.00333);
+
+        defaultPreset = new BoostPreset();
+        defaultPreset.refillRate = refillRate;
+        defaultPreset.drainRate = drainRate;
+        defaultPreset.particle = trailEnabled ? trailType : null;
+
+        // 🧩 Load all permission-based presets
+        presetMap.clear();
+        ConfigurationSection presets = config.getConfigurationSection("presets");
+        if (presets != null) {
+            for (String key : presets.getKeys(false)) {
+                ConfigurationSection section = presets.getConfigurationSection(key);
+                if (section == null) continue;
+
+                BoostPreset preset = new BoostPreset();
+                preset.refillRate = section.getDouble("refill-rate", refillRate);
+                preset.drainRate = section.getDouble("drain-rate", drainRate);
+
+                // 🚀 Handle boost-speed
+                if (section.isDouble("boost-speed")) {
+                    preset.boostSpeed = section.getDouble("boost-speed");
+
+                    if (preset.boostSpeed > 1.5) {
+                        plugin.getLogger().warning(
+                                "[HappyGhastBoost] Preset '" + key + "' uses a high boost-speed value (" +
+                                        preset.boostSpeed + ") — may cause rubberbanding or client desync.");
+                    }
+                } else {
+                    preset.boostSpeed = boostSpeed;
+                }
+
+                // ✨ Handle particle override
+                String particleRaw = section.getString("particle", "").trim();
+                if (!particleRaw.isEmpty()) {
+                    try {
+                        preset.particle = Particle.valueOf(particleRaw.toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException e) {
+                        plugin.getLogger().warning("Invalid particle in preset '" + key + "': " + particleRaw + ". Ignoring.");
+                    }
+                }
+
+                if (preset.particle == null && trailEnabled) {
+                    preset.particle = trailType;
+                }
+
+                presetMap.put(key, preset);
+            }
+        }
+
+        plugin.getLogger().info("HappyGhastBoost settings loaded. " + presetMap.size() + " presets available.");
     }
 
     // ======================
@@ -264,7 +323,7 @@ public class HappyGhastBoostManager implements Listener {
 
                 // ⚡ Charge drain if boosting, otherwise slowly refill
                 if (state.boosting && state.charge > 0.0) {
-                    state.charge -= drainRate;
+                    state.charge -= state.drainRate;
                     applyBoost(player, state); // apply actual motion and particles
 
                     // ❌ Stop boost if charge runs out
@@ -277,7 +336,7 @@ public class HappyGhastBoostManager implements Listener {
 
                 } else {
                     if (state.charge < 1.0) {
-                        state.charge += refillRate;
+                        state.charge += state.refillRate;
                     }
                 }
 
@@ -430,6 +489,14 @@ public class HappyGhastBoostManager implements Listener {
             state.mustReleaseBeforeNextBoost = false;
         }
 
+        // 🎚️ Always apply current preset (even if state already exists)
+        BoostPreset preset = getPresetFor(player);
+        state.refillRate = preset.refillRate;
+        state.drainRate = preset.drainRate;
+        state.particle = preset.particle;
+        log(LoggingMode.DEBUG, "Preset", "Assigned preset to %s → refill=%.3f drain=%.5f particle=%s",
+                player.getName(), preset.refillRate, preset.drainRate, preset.particle);
+
         // 🔋 If this ghast had a charge saved from a previous rider, restore it now
         Double savedCharge = ghastChargeLevels.remove(ghastId);
         if (savedCharge != null) {
@@ -443,7 +510,7 @@ public class HappyGhastBoostManager implements Listener {
         }
 
         // 🎯 Show the action bar to the pilot immediately
-        updateActionBar(player, boostStates.get(playerId));
+        updateActionBar(player, state);
 
         log(LoggingMode.BASIC, "Pilot", "Assigned %s as pilot of Ghast %s", player.getName(), ghastId);
     }
@@ -479,6 +546,16 @@ public class HappyGhastBoostManager implements Listener {
         log(LoggingMode.BASIC, "Pilot", "Unregistered pilot %s", player.getName());
     }
 
+    // 🎚️ Returns the matching preset for a player based on permissions
+    private BoostPreset getPresetFor(Player player) {
+        for (String key : presetMap.keySet()) {
+            if (player.hasPermission("happyghastboost.preset." + key)) {
+                return presetMap.get(key); // ✅ Match found, return custom preset
+            }
+        }
+        return defaultPreset; // 🔁 Fallback to default if no match
+    }
+
     // ======================
     // 🧠 Boost Mechanics
     // ======================
@@ -505,8 +582,8 @@ public class HappyGhastBoostManager implements Listener {
             // 💨 Optional trail particle effect
             if (trailEnabled) {
                 Location loc = ghast.getLocation().add(0, 0.5, 0);
-                player.getWorld().spawnParticle(trailType, loc, 3, 0.1, 0.1, 0.1, 0);
-                log(LoggingMode.VERBOSE, "Particles", "Spawned particle %s at %s", trailType, loc.toVector());
+                player.getWorld().spawnParticle(state.particle, loc, 3, 0.1, 0.1, 0.1, 0);
+                log(LoggingMode.VERBOSE, "Particles", "Spawned particle %s at %s", state.particle, loc.toVector());
             }
 
             log(LoggingMode.VERBOSE, "Velocity", "Applied velocity to ghast: %s", velocity);
@@ -584,6 +661,21 @@ public class HappyGhastBoostManager implements Listener {
 
         // ❌ Prevents reboost until forward input is released and pressed again
         boolean mustReleaseBeforeNextBoost = false;
+
+        // 🎚️ Preset-specific values
+        double refillRate = 0.02;
+        double drainRate = 0.00333;
+        Particle particle = Particle.FLAME;
+    }
+
+    // ======================
+    // 🎛️ Preset Definition
+    // ======================
+    private static class BoostPreset {
+        public double refillRate;
+        public double drainRate;
+        public double boostSpeed;
+        public Particle particle;
     }
 
     // ======================
