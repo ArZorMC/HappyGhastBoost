@@ -1,3 +1,38 @@
+# === 💬 MiniMessage Formatting ===
+# Most plugin messages (including GUI labels and action bars) support MiniMessage.
+# MiniMessage uses tags like <red>, <bold>, <hover:...> to style your text.
+#
+# ✅ Basic Examples:
+# - <red>Red Text</red>
+# - <bold><yellow>Bold Yellow</yellow></bold>
+# - <#ff0000>Hex Color Example</#ff0000>
+# - <gradient:#fbbf24:#9b5de5>Gradient Text</gradient>
+#
+# 🖱️ Interactive Tags:
+# - <hover:show_text:'Extra info'><green>Hover Me</green></hover>
+# - <click:run_command:'/help'><aqua>Click Me</aqua></click>
+#
+# ⚠️ CLOSING TAGS REQUIRED:
+#   Every tag must be properly closed, or your message will break.
+#   ❌ Incorrect: <bold><yellow>Missing closing tag
+#   ✅ Correct:   <bold><yellow>Styled</yellow></bold>
+#
+# 📌 Built-in Placeholders (used in some messages):
+# - <player>         → Player’s username
+# - <ghast>          → Ghast entity ID or reference
+# - <mode>           → Logging mode (e.g., DEBUG, VERBOSE)
+# - <value>          → Config value (used in warnings)
+#
+# These placeholders are replaced automatically by the plugin when messages are sent.
+# Not all messages use placeholders—only those that require dynamic data.
+# Only use placeholders in messages that support them, or they will appear as raw text.
+#
+# 🔧 Tips:
+# - To disable a message entirely, set its value to an empty string: ""
+#   Example: reload-complete: ""
+# - For advanced formatting, check the official MiniMessage docs:
+#   https://docs.advntr.dev/minimessage/format.html
+
 messages:
   # === 🟩 Action Bar States ===
   boost-ready: "<green><bold>🚀 Boost Ready!"
