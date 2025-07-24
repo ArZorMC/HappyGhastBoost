@@ -45,8 +45,11 @@ public class HappyGhastBoost extends JavaPlugin implements CommandExecutor, TabC
 
         // 🚀 Initialize and start the core boost manager
         boostManager = new HappyGhastBoostManager(this);
-        boostManager.loadChargeData(); // 🔋 Load persisted boost charge levels
         getServer().getPluginManager().registerEvents(boostManager, this); // 🪝 Hook into events
+
+        // ✅ Load ghast charge data from PDC
+        boostManager.loadChargeDataFromPDC();
+
         boostManager.start(); // ⏱ Start the repeating tick task
         getLogger().info("✅ Boost manager started and event listeners registered.");
 
@@ -59,10 +62,11 @@ public class HappyGhastBoost extends JavaPlugin implements CommandExecutor, TabC
     // 🔧 Called when the plugin is disabled (shutdown or reload)
     @Override
     public void onDisable() {
-        // 💾 Save any remaining charge data to disk
+        // ✅ Persist ghast charge data before shutdown
         if (boostManager != null) {
-            boostManager.saveChargeData();
+            boostManager.saveChargeDataToPDC();
         }
+
         getLogger().info("HappyGhastBoost disabled.");
     }
 
@@ -151,13 +155,6 @@ public class HappyGhastBoost extends JavaPlugin implements CommandExecutor, TabC
             command.setTabCompleter(this);
         } else {
             getLogger().severe("⚠️ Command 'happyghastboost' not defined in plugin.yml!");
-        }
-    }
-
-    // 💾 Public API for saving charge data from other classes
-    public void saveChargeData() {
-        if (boostManager != null) {
-            boostManager.saveChargeData();
         }
     }
 

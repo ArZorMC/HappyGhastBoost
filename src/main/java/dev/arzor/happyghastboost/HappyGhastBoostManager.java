@@ -9,9 +9,6 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 
 import org.bukkit.*;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HappyGhast;
 import org.bukkit.entity.Player;
@@ -19,15 +16,13 @@ import org.bukkit.event.*;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityDismountEvent;
 import org.bukkit.event.entity.EntityMountEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
-import org.geysermc.floodgate.api.FloodgateApi;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.*;
 
 // ======================
@@ -41,6 +36,9 @@ public class HappyGhastBoostManager implements Listener {
     private final HappyGhastBoost plugin;
 
     // ⛽ Boost & Charge State
+
+    // 📛 Key used to store/retrieve boost charge from PersistentDataContainer
+    private final NamespacedKey CHARGE_KEY;
 
     // ⚡ Stores boost-related state for each player (charge level, boost status, timers, etc.)
     private final Map<UUID, BoostState> boostStates = new HashMap<>();
@@ -58,9 +56,6 @@ public class HappyGhastBoostManager implements Listener {
 
     // 🧹 Temporary suppression of boost logic right after dismount to avoid ghost ticks
     private final Set<UUID> recentlyUnregistered = new HashSet<>();
-
-    // 🗂️ Cache of player UUID → latest known name (Java players only)
-    private final Map<UUID, String> knownPlayerNames = new HashMap<>();
 
     // 🧪 Logging Snapshot Filters
 
@@ -81,9 +76,6 @@ public class HappyGhastBoostManager implements Listener {
     // 🔁 Main Bukkit task that ticks all active ghast pilots
     private BukkitTask loopTask;
 
-    // 💾 Repeating task to auto-save charge data to disk every few minutes
-    private BukkitTask autoSaveTask;
-
     // ======================
     // ⚙️ Configurable Values (loaded from config.yml)
     // ======================
@@ -94,15 +86,13 @@ public class HappyGhastBoostManager implements Listener {
     private boolean trailEnabled;
     private Particle trailType;
 
-    // 💾 YAML config used to persist ghast charge states between restarts
-    private File chargesFile;
-
     // ======================
     // 🧱 Constructor & Setup
     // ======================
     // 🔧 Constructor: loads plugin reference and applies settings from config.yml
     public HappyGhastBoostManager(HappyGhastBoost plugin) {
         this.plugin = plugin;
+        this.CHARGE_KEY = new NamespacedKey(plugin, "boost_charge");
         loadSettings();
         loadLoggingMode();
     }
@@ -142,17 +132,12 @@ public class HappyGhastBoostManager implements Listener {
         final double dotThreshold = plugin.getConfig().getDouble("forward-dot-threshold", 0.85);
         final long forwardHoldThreshold = plugin.getConfig().getLong("forward-hold-ms", 1200L);
 
-        // 🕒 Start periodic auto-save every 5 minutes
-        long autoSaveIntervalTicks = 20L * 60 * 5; // 5 minutes in ticks
-        if (autoSaveTask != null) autoSaveTask.cancel();
-        autoSaveTask = Bukkit.getScheduler().runTaskTimer(plugin, plugin::saveChargeData, autoSaveIntervalTicks, autoSaveIntervalTicks);
-
         // 🎮 The core tick loop that runs every X ticks and handles player-ghast boosting
         loopTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             // 🕒 Track the current tick timestamp
             long now = System.currentTimeMillis();
 
-// 🛡️ Grace period after losing alignment before cancelling boost
+        // 🛡️ Grace period after losing alignment before cancelling boost
             long misalignmentGrace = plugin.getConfig().getLong("boost-misalignment-grace-ms", 300);
 
             // Iterate over all piloted ghasts
@@ -343,6 +328,15 @@ public class HappyGhastBoostManager implements Listener {
 
         // ✅ Ensure the player dismounting is the one we assigned
         if (playerId.equals(ghastToPilot.get(ghastId))) {
+
+            // 💾 Persist charge to PDC immediately
+            BoostState state = boostStates.get(playerId);
+            if (state != null && ghast.isValid()) {
+                double clamped = Math.max(0.0, Math.min(1.0, state.charge));
+                ghast.getPersistentDataContainer().set(CHARGE_KEY, PersistentDataType.DOUBLE, clamped);
+                log(LoggingMode.DEBUG, "Charge", "Saved charge to PDC for ghast %s after dismount: %.2f", ghastId, clamped);
+            }
+
             unregisterPilot(player);
 
             // 🕐 Wait one tick, then check if a new rider has taken their place
@@ -359,13 +353,20 @@ public class HappyGhastBoostManager implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
-
-        // 🧹 Remove from boost tracking
-        unregisterPilot(player);
+        UUID playerId = player.getUniqueId();
 
         // 🧭 Check if player was riding a Happy Ghast
         Entity vehicle = player.getVehicle();
         if (vehicle instanceof HappyGhast ghast) {
+
+            // 💾 Persist charge to PDC on quit
+            BoostState state = boostStates.get(playerId);
+            if (state != null) {
+                double clamped = Math.max(0.0, Math.min(1.0, state.charge));
+                ghast.getPersistentDataContainer().set(CHARGE_KEY, PersistentDataType.DOUBLE, clamped);
+                log(LoggingMode.DEBUG, "Charge", "Saved charge to PDC for ghast %s after %s quit: %.2f", ghast.getUniqueId(), player.getName(), clamped);
+            }
+
             // ⏳ Schedule one-tick delay to give time for other passengers to be seated
             Bukkit.getScheduler().runTask(plugin, () -> {
                 List<Entity> passengers = ghast.getPassengers();
@@ -376,11 +377,8 @@ public class HappyGhastBoostManager implements Listener {
             });
         }
 
-        // 📝 Store their name while still online
-        knownPlayerNames.put(player.getUniqueId(), player.getName());
-
-        // 💾 Optional: immediately persist charges while name is resolvable
-        saveChargeData();  // <- safe and effective here
+        // 🧹 Remove from boost tracking
+        unregisterPilot(player);
     }
 
     @EventHandler
@@ -393,6 +391,9 @@ public class HappyGhastBoostManager implements Listener {
         // 🧹 Remove any saved charge or pilot association
         ghastChargeLevels.remove(ghastId);
         UUID pilotId = ghastToPilot.remove(ghastId);
+
+        // 🧼 Remove the charge from persistent data
+        ghast.getPersistentDataContainer().remove(CHARGE_KEY);
 
         if (pilotId != null) {
             Player pilot = Bukkit.getPlayer(pilotId);
@@ -588,101 +589,71 @@ public class HappyGhastBoostManager implements Listener {
     // ======================
     // 📁 Charge Persistence
     // ======================
-    public void loadChargeData() {
-        chargesFile = new File(plugin.getDataFolder(), "charges.yml");
+    public void loadChargeDataFromPDC() {
+        int loaded = 0;
 
-        // 📁 If file doesn't exist, create it and write header comment
-        if (!chargesFile.exists()) {
-            try {
-                if (chargesFile.createNewFile()) {
-                    try (PrintWriter writer = new PrintWriter(chargesFile)) {
-                        writer.println("# This file stores persistent Happy Ghast charge levels.");
-                        writer.println("# It is managed automatically — do not edit manually.");
+        for (World world : Bukkit.getWorlds()) {
+            for (HappyGhast ghast : world.getEntitiesByClass(HappyGhast.class)) {
+                if (!ghast.isValid()) continue;
+
+                PersistentDataContainer pdc = ghast.getPersistentDataContainer();
+                if (pdc.has(CHARGE_KEY, PersistentDataType.DOUBLE)) {
+                    Double value = pdc.get(CHARGE_KEY, PersistentDataType.DOUBLE);
+
+                    // ✅ Safety check against corrupted data
+                    if (value != null && Double.isFinite(value)) {
+                        ghastChargeLevels.put(ghast.getUniqueId(), Math.max(0.0, Math.min(1.0, value)));
+                        loaded++;
+                    } else if (value != null) {
+                        log(LoggingMode.DEBUG, "Charge", "Skipped loading invalid charge (non-finite) for ghast %s", ghast.getUniqueId());
                     }
                 }
-            } catch (IOException e) {
-                plugin.getLogger().warning("Failed to create or write to charges.yml: " + e.getMessage());
             }
         }
 
-        // 📄 Load charge config from disk
-        FileConfiguration chargesConfig = YamlConfiguration.loadConfiguration(chargesFile);
-        ConfigurationSection section = chargesConfig.getConfigurationSection("charges");
-
-        if (section != null) {
-            for (String key : section.getKeys(false)) {
-                try {
-                    UUID ghastId = UUID.fromString(key);
-                    double charge = section.getDouble(key);
-                    ghastChargeLevels.put(ghastId, Math.max(0.0, Math.min(1.0, charge)));
-                } catch (IllegalArgumentException ignored) {
-                    plugin.getLogger().warning("Invalid UUID in charges.yml: " + key);
-                }
-            }
-            log(LoggingMode.DEBUG, "Charge", "Loaded %d saved charge levels from charges.yml.", ghastChargeLevels.size());
-        }
+        log(LoggingMode.DEBUG, "Charge", "Loaded %d Happy Ghast charges from PDC.", loaded);
     }
 
-    public void saveChargeData() {
-        if (chargesFile == null) return;
-
+    public void saveChargeDataToPDC() {
         int saved = 0;
 
-        try (PrintWriter writer = new PrintWriter(chargesFile)) {
-            // 🧾 Write header
-            writer.println("# This file stores persistent Happy Ghast charge levels.");
-            writer.println("# It is managed automatically — do not edit manually.");
-            writer.println("charges:");
+        for (Map.Entry<UUID, Double> entry : ghastChargeLevels.entrySet()) {
+            UUID ghastId = entry.getKey();
+            Double charge = entry.getValue();
 
-            for (Map.Entry<UUID, Double> entry : ghastChargeLevels.entrySet()) {
-                UUID uuid = entry.getKey();
-                double value = Math.max(0.0, Math.min(1.0, entry.getValue()));
+            if (charge == null) continue; // 🚫 Skip nulls
 
-                // 🔍 Unified player name resolution
-                String name = null;
-
-                // ✅ Prefer online name (Java or Bedrock)
-                Player online = Bukkit.getPlayer(uuid);
-                if (online != null) {
-                    name = online.getName();
-                }
-
-                // 🌉 Then try Floodgate (for Bedrock UUIDs)
-                if (name == null && FloodgateApi.getInstance().isFloodgatePlayer(uuid)) {
-                    name = FloodgateApi.getInstance().getPlayer(uuid).getUsername();
-                }
-
-                // 📁 Fallback to offline player cache
-                if (name == null) {
-                    OfflinePlayer offline = Bukkit.getOfflinePlayer(uuid);
-                    name = offline.getName();
-                }
-
-                // 🧠 Fallback to known memory cache (Java only)
-                if (name == null) {
-                    name = knownPlayerNames.get(uuid);
-                }
-
-                // ❓ Final fallback if all else fails
-                if (name == null) {
-                    name = "(unknown)";
-                }
-
-                // 📝 Write name comment (omit if unknown)
-                if (!"(unknown)".equals(name)) {
-                    writer.println("  # " + name);
-                }
-
-                // 💾 Write charge with clean formatting
-                writer.println("  " + uuid + ": " + String.format(Locale.US, "%.4f", value));
+            Entity entity = Bukkit.getEntity(ghastId);
+            if (entity instanceof HappyGhast ghast && ghast.isValid()) {
+                double clamped = Math.max(0.0, Math.min(1.0, charge));
+                ghast.getPersistentDataContainer().set(CHARGE_KEY, PersistentDataType.DOUBLE, clamped);
                 saved++;
             }
-
-            log(LoggingMode.DEBUG, "Charge", "Saved %d charge levels to charges.yml.", saved);
-
-        } catch (IOException e) {
-            plugin.getLogger().severe("Failed to save charges.yml: " + e.getMessage());
         }
+
+        log(LoggingMode.DEBUG, "Charge", "Saved %d Happy Ghast charges to PDC.", saved);
+    }
+
+    // ======================
+    // 🌍 World Change Handling
+    // ======================
+
+    @EventHandler
+    public void onGhastWorldChange(EntityTeleportEvent event) {
+        if (!(event.getEntity() instanceof HappyGhast ghast)) return;
+
+        UUID ghastId = ghast.getUniqueId();
+
+        // 💾 Save charge to PDC before world change
+        Double charge = ghastChargeLevels.get(ghastId);
+        if (charge != null) {
+            double clamped = Math.max(0.0, Math.min(1.0, charge));
+            ghast.getPersistentDataContainer().set(CHARGE_KEY, PersistentDataType.DOUBLE, clamped);
+            log(LoggingMode.DEBUG, "Charge", "Saved charge %.2f before world change for ghast %s", clamped, ghastId);
+        }
+
+        // 🧹 Remove from charge map to avoid stale references
+        ghastChargeLevels.remove(ghastId);
     }
 
     // ======================
