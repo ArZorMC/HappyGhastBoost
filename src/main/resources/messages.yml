@@ -1,0 +1,21 @@
+messages:
+  # === 🟩 Action Bar States ===
+  boost-ready: "<green><bold>🚀 Boost Ready!"
+  charging: "<yellow>⚡ Charging Boost"
+  boosting: "<red><bold>🔥 Boosting"
+
+  # === ⚙️ Command Feedback ===
+  logging-mode-set: "<gold>📋 Logging mode set to: <mode>"
+  reload-complete: "<green>✅ HappyGhastBoost configuration reloaded."
+
+  no-permission: "<red>⛔ You don't have permission."
+  invalid-usage: "<red>❓ Usage: /happyghastboost <logdisable|logbasic|logdebug|logverbose|reload>"
+
+  # === 🐛 Debug Logging ===
+  pilot-assigned: "<gray>🎮 Assigned <white><player> <gray>as pilot of ghast <white><ghast>"
+  pilot-unregistered: "<gray>👋 Unregistered pilot <white><player>"
+  pilot-handoff: "<gray>🔁 Pilot auto-switched to <white><player> <gray>after dismount."
+  attempted-boost-empty: "<gray><player> <red>attempted to boost with <bold>0% charge"
+
+  # === ⚠️ Config Warnings ===
+  invalid-particle: "<red>⚠️ Invalid particle type in config: <white><value><red>. Defaulting to <white>FLAME"

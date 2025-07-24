@@ -1,0 +1,23 @@
+name: HappyGhastBoost
+main: dev.arzor.happyghastboost.HappyGhastBoost
+version: 1.0.0
+api-version: 1.21
+author: ArZor
+description: Boost system for Happy Ghast mounts
+
+commands:
+  happyghastboost:
+    description: Manage HappyGhastBoost (logging and reload)
+    aliases: [hgb]
+    usage: /<command> <logdisable|logbasic|logdebug|logverbose|reload>
+    permission: happyghastboost.admin
+    permission-message: You do not have permission to use this command.
+
+permissions:
+  happyghastboost.admin:
+    description: Allows use of admin commands like /happyghastboost debug|reload|verbose
+    default: op
+
+  happyghastboost.use:
+    description: Allows the player to use Happy Ghast boost features
+    default: false

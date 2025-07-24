@@ -1,0 +1,131 @@
+# ==============================================================================
+# 🚀 Happy Ghast Boost Configuration
+#
+# This file controls how boosting works for happy ghasts that players ride.
+#
+# 🧠 How to Explain It to Players:
+# • Hold the **forward key (W)** to begin activating a boost.
+# • After holding forward for long enough (see `forward-hold-ms`), the ghast will
+#   automatically start **boosting faster**.
+# • Boosting continues as long as you're moving mostly straight and have charge.
+#
+# 🛑 To stop boosting:
+# • Turn too sharply (misalignment),
+# • Or run out of boost charge.
+#
+# ⚠️ If you **fully drain your boost**, you must **stop moving completely**
+# before you're allowed to start boosting again.
+#
+# ✨ While boosting:
+# • Charge drains over time and gradually recharges when idle.
+# • The action bar shows a colored boost bar and charge percent.
+# • A particle trail appears (if enabled).
+#
+# 🛠️ You can tweak how fast charge builds/drains, how strict direction is,
+#    how fast boost speed ramps up, and how smooth or snappy the boost feels
+#    using the settings below.
+#
+# ❗ Players must have the `happyghastboost.use` permission if `require-permission: true`.
+# ==============================================================================
+
+
+# === Permissions ===
+# If true, only players with the "happyghastboost.use" permission can use boosting and see the UI.
+require-permission: true
+
+# === Boost Mechanics ===
+
+# 🔋 How quickly the boost recharges when not boosting (per update tick).
+# Formula: 1.0 / (20 / update-interval * seconds-to-full)
+# Example: refill-rate: 0.01 with update-interval: 1 → 5s to full
+#          refill-rate: 0.01 with update-interval: 2 → 10s to full
+# Higher = faster recharge. Default: 0.02 (~5s to full if update-interval: 2)
+refill-rate: 0.02
+
+# 🔻 How quickly boost charge drains while boosting (per update tick).
+# Formula: 1.0 / (20 / update-interval * seconds-of-boost)
+# Example: drain-rate: 0.005 with update-interval: 1 → 10s of boost
+#          drain-rate: 0.005 with update-interval: 2 → 20s of boost
+# Higher = shorter boosts. Default: 0.00333 (~30s if update-interval: 2)
+drain-rate: 0.00333
+
+# 🚀 How fast the ghast moves when boosting (velocity multiplier).
+# 1.0 = 1 block/tick = 20 blocks/sec.
+#
+# Reference:
+# - 0.25 → ~vanilla ghast speed
+# - 0.5  → ~2× faster
+# - 1.0  → ~4× faster (default)
+#
+# ⚠️ Raise to go faster. Too high may cause desync, loss of control, or broken leads.
+# Happy Ghasts pulling entities with leads may snap the lead at high speeds. Default: 1.0
+boost-speed: 1.0
+
+# 📈 How long it takes to reach full boost speed (in milliseconds).
+# A longer ramp-up makes boosts feel smoother and builds momentum gradually.
+# Lower this for snappier acceleration. Default: 2000ms
+boost-rampup-speed-ms: 2000
+
+# ⏱️ How long the player must hold forward (in milliseconds) to trigger a boost.
+# Raise this if boost feels too "trigger-happy". Lower to make it easier. Default: 3500 (3.5 seconds)
+forward-hold-ms: 3500
+
+# 🎯 How closely aligned the ghast’s movement must be with its facing direction (0.0–1.0).
+# 1.0 = perfectly straight; 0.0 = moving sideways/backwards.
+# Lower this if boosts feel unresponsive. Default: 0.8
+forward-dot-threshold: 0.8
+
+# 🐌 Minimum movement speed to qualify as "moving forward" (measured in squared blocks per tick).
+# Formula: ΔX² + ΔY² + ΔZ² — compares total distance moved each tick (no square root).
+# Example: ΔX=0.04, ΔZ=0.05 → 0.0016 + 0.0025 = 0.0041 → below threshold, ignored as drift.
+# Raise to ignore tiny movement. Lower to make detection more responsive. Default: 0.005
+min-forward-speed: 0.005
+
+# 🪂 Grace period (in milliseconds) after losing alignment before boost is interrupted.
+# Raise this to allow looser control. Default: 100ms
+boost-misalignment-grace-ms: 100
+
+# 🔁 How often the boost logic updates (in ticks). 20 ticks = 1 second.
+# Lower is smoother but uses more CPU. Default: 2 (0.1s)
+update-interval: 2
+
+# === Boost Bar Appearance ===
+bar-style:
+  length: 10                      # Number of characters in the bar
+  character-filled: "█"          # Character for filled charge
+  character-empty: "░"           # Character for empty charge
+  color-filled: "<green>"        # Color when not boosting
+  color-empty: "<dark_gray>"     # Color of empty bar
+  color-filled-boosting: "<red>" # Color while actively boosting
+
+# Format of the action bar display.
+# Available placeholders: <label>, <bar>, <percent>
+actionbar-format: "<label> <bar> <percent>%"
+
+# === Particle Trail Settings ===
+particle-trail:
+  enabled: true                  # Show trail while boosting
+  type: FLAME                    # Particle type to use. Must be a valid Bukkit Particle enum.
+                                 # ✅ Examples: FLAME, END_ROD, SMOKE_NORMAL, CLOUD, SOUL_FIRE_FLAME
+                                 # ⚠️ Avoid particles that require extra data:
+                                 #    - REDSTONE (needs color data)
+                                 #    - ITEM_CRACK, BLOCK_CRACK (need item/block input)
+                                 # These will fail silently or cause errors if used here.
+                                 # 📚 See full list: https://hub.spigotmc.org/javadocs/bukkit/org/bukkit/Particle.html
+
+# === 🔍 Console Logging Settings ===
+
+# Controls how much information is logged to the console.
+#
+# ⚠️ WARNING: YAML will interpret unquoted OFF/ON/TRUE/FALSE as booleans.
+# You MUST wrap the logging-mode in quotes like: "OFF"
+#
+# Valid options (case-insensitive, quoted):
+# - "OFF"     → No logs except errors
+# - "BASIC"   → Key plugin events (mount, dismount, boost start/stop)
+# - "DEBUG"   → Useful state changes (charge %, alignment shifts, triggers)
+# - "VERBOSE" → Detailed tick-level logs (movement vectors, particles, etc.)
+#
+# ❌ Do NOT use: logging-mode: OFF     ← (YAML reads this as false and breaks)
+# ✅ Use this:  logging-mode: "OFF"
+logging-mode: "OFF"
