@@ -1,5 +1,5 @@
 name: HappyGhastBoost
-main: dev.arzor.happyghastboost.HappyGhastBoost
+main: com.github.arzormc.happyghastboost.HappyGhastBoost
 version: 1.0.0
 api-version: 1.21
 author: ArZor
